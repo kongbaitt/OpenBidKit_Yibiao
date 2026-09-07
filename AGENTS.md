@@ -3,12 +3,14 @@
 ## 范围
 - 当前有效产品代码在 `client/`。
 - `analytics/` 是独立 Cloudflare Worker API 与 Dashboard：除埋点采集、聚合和查看外，也承载客户端公告、资源、插件、模型信息、许可证和 Agent 失败诊断等在线服务；修改上述在线服务协议时同步检查两端。
+- `openxmlhelper/` 是独立 .NET 10 Word/Open XML 助手，给 Main 的 `openXmlHelperService.cjs` 和 Pi Agent 的 `openxml` 工具做 Word 处理；产物打进 `client/vendor/openxml-tools/`。改它前先读 `openxmlhelper/开发说明.md`。
 
 ## Client
 - 开发 `client/` 前以及初次对话时，必须先完整阅读 `client/开发说明.md`，保持框架风格一致性。
 - 没有 root `package.json`；客户端命令都先 `cd client`。
 - 安装/验证：`npm ci` 后 `npm run build`。`npm run build` 等价 `tsc --noEmit && vite build`，仓库未配置统一 lint/test 脚本。
 - 开发启动：`npm run dev`，固定 Vite `127.0.0.1:5173 --strictPort` 后再启动 Electron。
+- 本地调试/打包 Open XML 功能需要本机 .NET 10 SDK；助手发布产物经 `scripts/prepare-openxml-helper.cjs` 输出到 `client/vendor/openxml-tools/`。
 - 打包：`npm run dist:win` / `npm run dist:mac`，配置在 `client/package.json` 的 `build` 字段，产物在 `client/release/`。
 - Electron Main 和 preload 是 CommonJS：`client/electron/**/*.cjs`；Renderer 是 ESM TypeScript：`client/src/**/*.ts(x)`。
 - Renderer 不直接访问 Node、`fs`、`path`、`ipcRenderer`，只通过 `window.yibiao`；改 preload API 时同步 `client/src/shared/types/ipc.ts`。
@@ -26,7 +28,7 @@
 
 ## 数据与流程
 - 配置存到 Electron `userData/user_config.json`；业务工作区存到 `userData/workspace/`；结构化业务状态的权威存储是 `userData/workspace/yibiao.sqlite`。运行时 schema/migration 以 `electron/services/sqliteDatabase.cjs` 为准，改表时同步根目录 `sql/workspace_schema.sql`；技术方案旧 `technical_plan.json` 仅是启动清理对象，不得继续读写。
-- Renderer 只用 `localStorage` 存轻量 UI 偏好；草稿、API Key、流程状态以及业务正文都走 Main 侧存储/IPC。
+- Renderer 只用 `localStorage` 存远程公告已读标记等轻量偏好；草稿、API Key、流程状态以及业务正文都走 Main 侧存储/IPC。
 - 技术方案除文件导入/展示外，标书分析、目录、全局事实和正文等耗时流程都在 Electron Main 后台任务中运行，并持续写入对应 SQLite Store；页面卸载不应取消任务。
 - 技术方案目录与正文以 `technical_plan_outline_nodes`（Renderer 对应 `outlineData.outline[*].content`）为权威。`saveOutline()` 的 `reason` 是持久化协议：`replace` 清空全部旧正文，`edit` / `delete` / `add-*` 只使受影响节点失效，`sort` 重映射并保留正文和相关状态；不要在 Renderer 复制清理规则。
 - Mermaid 图以 Markdown `mermaid` 代码块保存；Renderer 本地渲染预览，Word 导出由 Main 本地转图片（不依赖外网）并通过 `window.yibiao.export.onWordExportProgress()` 报进度。
@@ -43,6 +45,7 @@
 - `.github/workflows/release.yml` 只在推送 `v*` tag 或手动输入 `tag_name` 时发布客户端。
 - Release CI 使用 Node 22，在 `client/` 下 `npm ci`，从 tag 同步 `package.json` 版本，再用 `electron-builder --publish never` 构建并由 `gh release upload` 上传产物。
 - 正式发布会用私钥生成构建证明，但尚未接入 Windows/macOS 操作系统代码签名；未签名提示是已知发布约束，不要在普通功能改动里临时绕过。
+- 发布后会自动触发 AtomGit/Gitee 镜像同步（`sync-mirrors.yml` / `sync-releases.yml` 及 `.github/scripts/`）；改动发布链路时留意这些下游流程。
 
 ## Analytics
 - Worker：`cd analytics\worker; npm install; npm run dev` 或 `npm run deploy`。

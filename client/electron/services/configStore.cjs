@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { getConfigFilePath } = require('../utils/paths.cjs');
 const { createAnalyticsClientId } = require('../utils/machineIdentity.cjs');
 
@@ -284,6 +285,7 @@ const defaultConfig = {
   storage_cleanup_version: 0,
   analytics_client_id: '',
   analytics_created_at: '',
+  console_go_session_id: '',
 };
 
 function createAnalyticsCreatedAt() {
@@ -745,6 +747,7 @@ function normalizeConfig(config) {
       : defaultConfig.storage_cleanup_version,
     analytics_client_id: source.analytics_client_id || defaultConfig.analytics_client_id,
     analytics_created_at: source.analytics_created_at || defaultConfig.analytics_created_at,
+    console_go_session_id: source.console_go_session_id || defaultConfig.console_go_session_id,
   };
 }
 
@@ -778,6 +781,22 @@ function createConfigStore(app) {
     };
   }
 
+  // 为 OpenCode Go（Console Go）端点提供按安装稳定的会话 ID，缺失时生成一次并持久化。
+  function withConsoleGoSession(config) {
+    if (config.console_go_session_id) {
+      return config;
+    }
+
+    return {
+      ...config,
+      console_go_session_id: crypto.randomUUID(),
+    };
+  }
+
+  function withConfigIdentity(config) {
+    return withConsoleGoSession(withAnalyticsIdentity(config));
+  }
+
   return {
     getConfigFilePath() {
       return configFile;
@@ -785,7 +804,7 @@ function createConfigStore(app) {
 
     load() {
       if (!fs.existsSync(configFile)) {
-        const config = withAnalyticsIdentity(normalizeConfig());
+        const config = withConfigIdentity(normalizeConfig());
         persist(config);
         return config;
       }
@@ -794,7 +813,7 @@ function createConfigStore(app) {
         const raw = fs.readFileSync(configFile, 'utf-8');
         const parsedConfig = JSON.parse(raw);
         const config = normalizeConfig(parsedConfig);
-        const nextConfig = withAnalyticsIdentity(config);
+        const nextConfig = withConfigIdentity(config);
         if (JSON.stringify(parsedConfig) !== JSON.stringify(nextConfig)) {
           persist(nextConfig);
         }
@@ -809,7 +828,7 @@ function createConfigStore(app) {
         const currentConfig = fs.existsSync(configFile)
           ? normalizeConfig(JSON.parse(fs.readFileSync(configFile, 'utf-8')))
           : normalizeConfig();
-        const nextConfig = withAnalyticsIdentity(normalizeConfig({
+        const nextConfig = withConfigIdentity(normalizeConfig({
           ...currentConfig,
           ...config,
           text_model_profiles: {
@@ -826,6 +845,7 @@ function createConfigStore(app) {
           },
           analytics_client_id: config?.analytics_client_id || currentConfig.analytics_client_id,
           analytics_created_at: config?.analytics_created_at || currentConfig.analytics_created_at,
+          console_go_session_id: config?.console_go_session_id || currentConfig.console_go_session_id,
         }));
         persist(nextConfig);
         return { success: true, message: '配置已保存', config_path: configFile };

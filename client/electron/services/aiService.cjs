@@ -333,6 +333,38 @@ function createHeaders(apiKey) {
   };
 }
 
+// 判断文本模型端点是否为 OpenCode Go（Console Go），这类端点要求额外会话头用于路由与提示词缓存。
+function isConsoleGoBaseUrl(baseUrl) {
+  const trimmed = String(baseUrl || '').trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    if (url.hostname === 'opencode.go.dev') {
+      return true;
+    }
+    return url.hostname === 'opencode.ai' && url.pathname.startsWith('/zen/go');
+  } catch {
+    return false;
+  }
+}
+
+// 构建文本模型请求头；命中 OpenCode Go 时补充自定义 User-Agent 与按安装稳定的会话 ID。
+function createChatHeaders(config) {
+  const headers = createHeaders(config.api_key);
+  if (!isConsoleGoBaseUrl(config.base_url)) {
+    return headers;
+  }
+
+  headers['User-Agent'] = 'yibiao-client';
+  if (config.console_go_session_id) {
+    headers['x-opencode-session'] = config.console_go_session_id;
+  }
+  return headers;
+}
+
 function trackAiRequest(app, config, payload) {
   void Promise.resolve()
     .then(() => {
@@ -933,7 +965,7 @@ async function fetchChatCompletion(app, config, body, options = {}) {
   try {
     return await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: createHeaders(config.api_key),
+      headers: createChatHeaders(config),
       body: JSON.stringify(body),
       signal: options.signal || controller.signal,
     });
@@ -2596,7 +2628,7 @@ function createAiService({ app, configStore }) {
           try {
             response = await fetch(`${trimBaseUrl(config.base_url)}/models`, {
               method: 'GET',
-              headers: createHeaders(config.api_key),
+              headers: createChatHeaders(config),
             });
           } catch (error) {
             throw markAiRequestError(error, { retryable: true });
